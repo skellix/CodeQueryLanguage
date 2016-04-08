@@ -126,13 +126,9 @@ public class TreeOperation {
 			node = root.query(into);
 		}
 		
-		map = null;
-		
 		if (before != null) {
 			
 			TreeNode dataStart = node.getFirstChild().thisNode;
-			
-			node = null;
 			
 			TreeModifier.insertDataBefore(insertData, dataStart, file);
 			
@@ -140,15 +136,11 @@ public class TreeOperation {
 			
 			TreeNode dataStart = node.getLastChild().thisNode;
 			
-			node = null;
-			
 			TreeModifier.insertDataAfter(insertData, dataStart, file);
 			
 		} else if (into != null) {
 			
 			TreeNode dataStart = node.getLastChild().thisNode;
-			
-			node = null;
 			
 			TreeModifier.insertDataInto(insertData, dataStart, file);
 		}

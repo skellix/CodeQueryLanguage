@@ -99,16 +99,6 @@ public class TreeModifier {
 					file.seek(newOffset);
 					file.write(moveBuffer, 0, length);
 				}
-//				for (long i = insertPoint + 1 ; i < oldLength ; i += moveBuffer.length) {
-//					
-//					int length = (int) Math.min(moveBuffer.length, oldLength - i);
-//					file.seek(i);
-//					file.readFully(moveBuffer, 0, length);
-//					
-//					long newOffset = insertOffset + (i - (insertPoint + 1));
-//					file.seek(newOffset);
-//					file.write(moveBuffer, 0, length);
-//				}
 			}
 			
 			file.seek(insertPoint + 1);
