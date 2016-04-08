@@ -18,24 +18,6 @@ public class TreeModifier {
 		
 		//updateOffsets(node, insertPoint, insertData);
 	}
-	
-	private static void updateOffsets(TreeNode node, int insertPoint, String insertData) {
-		
-		int lines = 0;
-		for (int i = 0 ; i < insertData.length() ; i ++) {
-			if (insertData.charAt(i) == '\n') {
-				lines ++;
-			}
-		}
-		
-		if (node.start > insertPoint) {
-			node.addOffset(insertData.getBytes().length, lines);
-		}
-		
-		ResultNode nodes = node.query(QueryParser.parse("following::.*"));
-		
-		System.out.print("");
-	}
 
 	public static void insertDataBefore(String insertData, TreeNode node, RandomAccessFile file) {
 		
@@ -169,6 +151,24 @@ public class TreeModifier {
 			e.printStackTrace();
 			System.exit(-1);
 		}
+	}
+	
+	private static void updateOffsets(TreeNode node, int insertPoint, String insertData) {
+		
+		int lines = 0;
+		for (int i = 0 ; i < insertData.length() ; i ++) {
+			if (insertData.charAt(i) == '\n') {
+				lines ++;
+			}
+		}
+		
+		if (node.start > insertPoint) {
+			node.addOffset(insertData.getBytes().length, lines);
+		}
+		
+		ResultNode nodes = node.query(QueryParser.parse("following::.*"));
+		
+		System.out.print("");
 	}
 
 }
