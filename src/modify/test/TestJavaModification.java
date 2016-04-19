@@ -52,9 +52,7 @@ public class TestJavaModification {
 			}
 		}
 		
-		TreeOperation data = new TreeOperation("src/modify/test/Main.java");
-		
-		for (int i = 0 ; i < 4 ; i ++) {
+		for (int i = 0 ; i < 20 ; i ++) {
 			
 			System.out.println(i);
 			
@@ -63,8 +61,9 @@ public class TestJavaModification {
 				System.out.print("");
 			}
 			
-			data.into("public/class/.*/{public/static/void/.*/.*/.*}")
-				.insert("System.out.println(\"Hello, world!\");\n");
+			TreeOperation data = new TreeOperation("src/modify/test/Main.java")
+					.into("public/class/.*/{public/static/void/.*/.*/.*}")
+					.insert("System.out.println(\"Hello, world!\");\n");
 		}
 		
 		System.out.print("");

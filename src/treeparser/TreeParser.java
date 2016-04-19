@@ -1,38 +1,48 @@
 package treeparser;
 
+import java.io.File;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import treeparser.io.IOSource;
+
 public class TreeParser {
 
 	public static TreeNode parse(String input) {
+		
 		TreeNode root = new TreeNode();
-		ByteBuffer bytes = MappedByteBuffer.wrap(input.getBytes());
-		if (!bytes.hasRemaining()) {
-			return root;
-		}
-		doParse(root, bytes, new AtomicInteger(0), new AtomicInteger(0));
+		IOSource source = new IOSource(MappedByteBuffer.wrap(input.getBytes()));
+		doParse(root, source, new AtomicInteger(0), new AtomicInteger(0));
+		
 		return root;
 	}
 	
-	public static TreeNode parse(MappedByteBuffer input) {
+	public static TreeNode parse(File input) {
+		
 		TreeNode root = new TreeNode();
-		if (!input.hasRemaining()) {
-			return root;
-		}
-		doParse(root, input, new AtomicInteger(0), new AtomicInteger(0));
+		IOSource source = new IOSource(input);
+		doParse(root, source, new AtomicInteger(0), new AtomicInteger(0));
+		
+		return root;
+	}
+	
+	public static TreeNode parse(IOSource source) {
+		
+		TreeNode root = new TreeNode();
+		doParse(root, source, new AtomicInteger(0), new AtomicInteger(0));
+		
 		return root;
 	}
 
-	private static void doParse(TreeNode root, ByteBuffer input,
+	private static void doParse(TreeNode root, IOSource source,
 			AtomicInteger i, AtomicInteger line) {
 		TreeNode node = null;
 		char c = 0;
 		boolean whitespace = true;
 		boolean delimit = false;
-		for (; i.get() < input.limit() ; i.getAndIncrement()) {
-			c = (char) input.get(i.get());
+		for (; i.get() < source.buffer.limit() ; i.getAndIncrement()) {
+			c = (char) source.buffer.get(i.get());
 			//System.out.printf("[%d]", (int) c);
 			switch (c) {
 				case '\\' : {
@@ -57,18 +67,18 @@ public class TreeParser {
 						delimit = false;
 						if (whitespace) {
 							whitespace = false;
-							node = new TreeNode(input, i.get());
+							node = new TreeNode(source, i.get());
 							node.line = line.get();
 							node.start = i.get();
 						}
 					} else {
 						whitespace = true;
-						TreeNode childNode = new TreeNode(input, i.get());
+						TreeNode childNode = new TreeNode(source, i.get());
 						childNode.line = line.get();
 						childNode.start = i.get();
 						
-						for (i.getAndIncrement() ; i.get() < input.limit() ; i.getAndIncrement()) {
-							c = (char) input.get(i.get());
+						for (i.getAndIncrement() ; i.get() < source.buffer.limit() ; i.getAndIncrement()) {
+							c = (char) source.buffer.get(i.get());
 							if (!delimit && (c == '"')) {
 								break;
 							} else if (c == '\\') {
@@ -94,7 +104,7 @@ public class TreeParser {
 							node = null;
 						}
 					}
-					node = new TreeNode(input, i.get());
+					node = new TreeNode(source, i.get());
 					node.line = line.get();
 					node.start = i.get();
 					node.end = i.get();
@@ -108,7 +118,7 @@ public class TreeParser {
 						delimit = false;
 						if (whitespace) {
 							whitespace = false;
-							node = new TreeNode(input, i.get());
+							node = new TreeNode(source, i.get());
 							node.line = line.get();
 							node.start = i.get();
 						}
@@ -119,12 +129,12 @@ public class TreeParser {
 							root.add(node);
 							node = null;
 						}
-						TreeNode childNode = new TreeNode(input, i.get());
+						TreeNode childNode = new TreeNode(source, i.get());
 						childNode.line = line.get();
 						childNode.start = i.get();
 						childNode.enter = i.get();
 						i.getAndIncrement();
-						doParse(childNode, input, i, line);
+						doParse(childNode, source, i, line);
 						childNode.exitLine = line.get();
 						childNode.exit = i.get() - 1;
 						childNode.end = i.get() - 1;
@@ -149,7 +159,7 @@ public class TreeParser {
 					if (delimit) delimit = false;
 					if (whitespace) {
 						whitespace = false;
-						node = new TreeNode(input, i.get());
+						node = new TreeNode(source, i.get());
 						node.line = line.get();
 						node.start = i.get();
 					}

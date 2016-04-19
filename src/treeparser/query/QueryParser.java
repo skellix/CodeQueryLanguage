@@ -4,32 +4,32 @@ import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import treeparser.TreeNode;
+import treeparser.io.IOSource;
+
 public class QueryParser {
 	
 	public static QueryNode parse(String input) {
 		QueryNode root = new QueryNode();
-		ByteBuffer bytes = MappedByteBuffer.wrap(input.getBytes());
-		if (!bytes.hasRemaining()) {
-			return root;
-		}
-		doParse(root, bytes, new AtomicInteger(0), new AtomicInteger(0));
+		IOSource source = new IOSource(MappedByteBuffer.wrap(input.getBytes()));
+		doParse(root, source, new AtomicInteger(0), new AtomicInteger(0));
 		return root;
 	}
 
-	private static void doParse(QueryNode root, ByteBuffer input, AtomicInteger i, AtomicInteger line) {
+	private static void doParse(QueryNode root, IOSource source, AtomicInteger i, AtomicInteger line) {
 		QueryNode node = null;
 		char c = 0;
 		boolean whitespace = true;
 		boolean delimit = false;
-		for (; i.get() < input.limit() ; i.getAndIncrement()) {
-			c = (char) input.get(i.get());
+		for (; i.get() < source.buffer.limit() ; i.getAndIncrement()) {
+			c = (char) source.buffer.get(i.get());
 			switch (c) {
 				case '\\' : {
 					if (delimit) {
 						delimit = false;
 						if (whitespace) {
 							whitespace = false;
-							node = new QueryNode(input, i.get());
+							node = new QueryNode(source, i.get());
 							node.line = line.get();
 							node.start = i.get();
 						}
@@ -56,18 +56,18 @@ public class QueryParser {
 						delimit = false;
 						if (whitespace) {
 							whitespace = false;
-							node = new QueryNode(input, i.get());
+							node = new QueryNode(source, i.get());
 							node.line = line.get();
 							node.start = i.get();
 						}
 					} else {
 						whitespace = true;
-						QueryNode childNode = new QueryNode(input, i.get());
+						QueryNode childNode = new QueryNode(source, i.get());
 						childNode.line = line.get();
 						childNode.start = i.get();
 						
-						for (i.getAndIncrement() ; i.get() < input.limit() ; i.getAndIncrement()) {
-							c = (char) input.get(i.get());
+						for (i.getAndIncrement() ; i.get() < source.buffer.limit() ; i.getAndIncrement()) {
+							c = (char) source.buffer.get(i.get());
 							if (!delimit && (c == '"')) {
 								break;
 							} else if (c == '\\') {
@@ -89,7 +89,7 @@ public class QueryParser {
 					if (node != null) {
 						node.end = i.get() - 1;
 						i.getAndIncrement();
-						doParse(node, input, i, line);
+						doParse(node, source, i, line);
 						root.addStep(node);
 						node = null;
 					}
@@ -101,7 +101,7 @@ public class QueryParser {
 						delimit = false;
 						if (whitespace) {
 							whitespace = false;
-							node = new QueryNode(input, i.get());
+							node = new QueryNode(source, i.get());
 							node.line = line.get();
 							node.start = i.get();
 						}
@@ -112,12 +112,12 @@ public class QueryParser {
 							root.add(node);
 							node = null;
 						}
-						QueryNode childNode = new QueryNode(input, i.get());
+						QueryNode childNode = new QueryNode(source, i.get());
 						childNode.line = line.get();
 						childNode.start = i.get();
 						childNode.enter = i.get();
 						i.getAndIncrement();
-						doParse(childNode, input, i, line);
+						doParse(childNode, source, i, line);
 						if (childNode.hasSteps()) {
 							childNode.children.add(childNode.steps.remove(0));
 							QueryNode step = (QueryNode) childNode.children.get(childNode.children.size() - 1);
@@ -132,11 +132,11 @@ public class QueryParser {
 						childNode.exit = i.get() - 1;
 						childNode.end = i.get() - 1;
 						root.addStep(childNode);
-						if (i.get() < input.limit() && input.get(i.get()) == '/') {
+						if (i.get() < source.buffer.limit() && source.buffer.get(i.get()) == '/') {
 							i.getAndIncrement();
 						}
-						if (input.hasRemaining()) {
-							doParse(childNode, input, i, line);
+						if (source.buffer.hasRemaining()) {
+							doParse(childNode, source, i, line);
 						}
 						return;
 					}
@@ -158,7 +158,7 @@ public class QueryParser {
 					if (delimit) delimit = false;
 					if (whitespace) {
 						whitespace = false;
-						node = new QueryNode(input, i.get());
+						node = new QueryNode(source, i.get());
 						node.line = line.get();
 						node.start = i.get();
 					}

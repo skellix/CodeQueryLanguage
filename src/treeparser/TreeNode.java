@@ -7,13 +7,14 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import treeparser.io.IOSource;
 import treeparser.query.QueryNode;
 import treeparser.query.ResultNode;
 
 public class TreeNode {
 
 	public TreeNode parent = null;
-	public ByteBuffer source = null;
+	public IOSource source = null;
 	//public String value = null;
 	public int line = -1;
 	public int exitLine = -1;
@@ -27,19 +28,19 @@ public class TreeNode {
 		// TODO Auto-generated constructor stub
 	}
 
-	public TreeNode(ByteBuffer input, int start) {
-		this.source = input;
+	public TreeNode(IOSource source, int start) {
+		this.source = source;
 		this.start = start;
 	}
 
-	public TreeNode(ByteBuffer source, int start, int end, int line) {
+	public TreeNode(IOSource source, int start, int end, int line) {
 		this.source = source;
 		this.start = start;
 		this.end = end;
 		this.line = line;
 	}
 
-	public TreeNode(ByteBuffer source, int start, int enter, int exit, int end, int line, int exitLine) {
+	public TreeNode(IOSource source, int start, int enter, int exit, int end, int line, int exitLine) {
 		this.source = source;
 		this.start = start;
 		this.enter = enter;
@@ -78,36 +79,108 @@ public class TreeNode {
 		}
 	}
 	
+	public String getLeadingWhitespace() {
+		
+		int i = start - 1;
+		for (; i >= 0 ; i --) {
+			byte c = source.buffer.get(i);
+			if (!(c == ' '
+					|| c == '\r'
+					|| c == '\t'
+					)) {
+				i ++;
+				break;
+			}
+		}
+		if (i >= 0) {
+			
+			int length = start - i;
+			byte[] data = new byte[length];
+			source.buffer.position(i);
+			source.buffer.get(data, 0, length);
+			
+			return new String(data);
+		}
+		
+		return "";
+	}
+	
+	public String getFollowingWhitespace() {
+		
+		int i = end + 1;
+		int limit = source.buffer.limit();
+		for (; i < limit ; i ++) {
+			byte c = source.buffer.get(i);
+			if (!(c == ' '
+					|| c == '\r'
+					|| c == '\t'
+					)) {
+				i --;
+				break;
+			}
+		}
+		if (i < limit) {
+			
+			int length = i - end;
+			byte[] data = new byte[length];
+			source.buffer.position(i);
+			source.buffer.get(data, 0, length);
+			
+			return new String(data);
+		}
+		
+		return "";
+	}
+	
+	public String getLineIndent() {
+		
+		TreeNode last = this;
+		for (TreeNode node = last ; node != null && node.line == last.line ; node = node.getPreviousSibling()) {
+			last = node;
+		}
+		
+		return last.getLeadingWhitespace();
+	}
+	
+	public String getIndentOfParent() {
+		
+		if (!hasParent()) {
+			return "";
+		}
+		
+		return parent.getLineIndent();
+	}
+	
 	public String getLabel() {
 		int length = (end - start) + 1;
-		if (start + length > source.limit()) {
+		if (start + length > source.buffer.limit()) {
 			return null;
 		}
 		byte[] data = new byte[length];
-		source.position(start);
-		source.get(data, 0, length);
+		source.buffer.position(start);
+		source.buffer.get(data, 0, length);
 		return new String(data);
 	}
 	
 	public String getEnterLabel() {
 		int length = (enter - start) + 1;
-		if (start + length > source.limit()) {
+		if (start + length > source.buffer.limit()) {
 			return null;
 		}
 		byte[] data = new byte[length];
-		source.position(start);
-		source.get(data, 0, length);
+		source.buffer.position(start);
+		source.buffer.get(data, 0, length);
 		return new String(data);
 	}
 	
 	public String getExitLabel() {
 		int length = (end - exit) + 1;
-		if (exit + length > source.limit()) {
+		if (exit + length > source.buffer.limit()) {
 			return null;
 		}
 		byte[] data = new byte[length];
-		source.position(exit);
-		source.get(data, 0, length);
+		source.buffer.position(exit);
+		source.buffer.get(data, 0, length);
 		return new String(data);
 	}
 	
@@ -308,10 +381,10 @@ public class TreeNode {
 			}
 			int i = this.start - 1;
 			for (; i >= 0 ; i --) {
-				if (!(this.source.get(i) == ' '
-						|| this.source.get(i) == '\r'
+				if (!(this.source.buffer.get(i) == ' '
+						|| this.source.buffer.get(i) == '\r'
 						//||this.source.get(i) == '\n'
-						|| this.source.get(i) == '\t'
+						|| this.source.buffer.get(i) == '\t'
 						)) {
 					i ++;
 					break;
@@ -320,8 +393,8 @@ public class TreeNode {
 			if (i >= 0) {
 				int length = start - i;
 				byte[] data = new byte[length];
-				source.position(i);
-				source.get(data, 0, length);
+				source.buffer.position(i);
+				source.buffer.get(data, 0, length);
 				stringBuilder.append(new String(data).replaceAll("\n", ""));
 			}
 			if (enter != -1) {
@@ -347,10 +420,10 @@ public class TreeNode {
 			}
 			int i = this.exit - 1;
 			for (; i >= 0 ; i --) {
-				if (!(this.source.get(i) == ' '
-						|| this.source.get(i) == '\r'
+				if (!(this.source.buffer.get(i) == ' '
+						|| this.source.buffer.get(i) == '\r'
 						//|| this.source.get(i) == '\n'
-						|| this.source.get(i) == '\t'
+						|| this.source.buffer.get(i) == '\t'
 						)) {
 					i ++;
 					break;
@@ -358,8 +431,8 @@ public class TreeNode {
 			}
 			int length = exit - i;
 			byte[] data = new byte[length];
-			source.position(i);
-			source.get(data, 0, length);
+			source.buffer.position(i);
+			source.buffer.get(data, 0, length);
 			stringBuilder.append(new String(data).replaceAll("\n", ""));
 			stringBuilder.append(getExitLabel().replaceAll("\n", ""));
 		}

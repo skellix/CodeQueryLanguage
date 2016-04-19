@@ -6,6 +6,7 @@ import java.util.Collection;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import treeparser.TreeNode;
+import treeparser.io.IOSource;
 
 public class QueryNode extends TreeNode {
 	
@@ -30,8 +31,8 @@ public class QueryNode extends TreeNode {
 		this.exitLine = root.exitLine;
 	}//*/
 
-	public QueryNode(ByteBuffer bytes, int i) {
-		super(bytes, i);
+	public QueryNode(IOSource source, int i) {
+		super(source, i);
 	}
 	
 	@Override

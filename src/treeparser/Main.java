@@ -61,14 +61,8 @@ public class Main {
 				if (arg.equalsIgnoreCase("--file")) {
 					if (args.hasNext()) {
 						String fileArg = args.next();
-						try {
-							RandomAccessFile file = new RandomAccessFile(new File(fileArg), "rw");
-							MappedByteBuffer fileMap = file.getChannel().map(FileChannel.MapMode.READ_ONLY, 0, file.length());
-							file.close();
-							return TreeParser.parse(fileMap);
-						} catch (IOException e) {
-							e.printStackTrace();
-						}
+						File file = new File(fileArg);
+						return TreeParser.parse(file);
 					} else {
 						System.err.println("[ERROR] filename expected after --file");
 						System.exit(-1);

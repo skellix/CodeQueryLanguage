@@ -127,12 +127,12 @@ public class ResultNode extends TreeNode {
 					}
 					line.set(thisNode.line);
 				}
-				int i = this.start - 1;
+				int i = start - 1;
 				for (; i >= 0 ; i --) {
-					if (!(this.source.get(i) == ' '
-							|| this.source.get(i) == '\r'
-							//|| this.source.get(i) == '\n'
-							|| this.source.get(i) == '\t'
+					if (!(source.buffer.get(i) == ' '
+							|| source.buffer.get(i) == '\r'
+							//|| source.get(i) == '\n'
+							|| source.buffer.get(i) == '\t'
 							)) {
 						i ++;
 						break;
@@ -141,8 +141,8 @@ public class ResultNode extends TreeNode {
 				if (i >= 0) {
 					int length = start - i;
 					byte[] data = new byte[length];
-					source.position(i);
-					source.get(data, 0, length);
+					source.buffer.position(i);
+					source.buffer.get(data, 0, length);
 					stringBuilder.append(new String(data).replaceAll("\n", ""));
 				}
 				if (enter != -1) {
@@ -166,12 +166,12 @@ public class ResultNode extends TreeNode {
 					}
 					line.set(thisNode.exitLine);
 				}
-				int i = this.exit - 1;
+				int i = exit - 1;
 				for (; i >= 0 ; i --) {
-					if (!(this.source.get(i) == ' '
-							|| this.source.get(i) == '\r'
-							//|| this.source.get(i) == '\n'
-							|| this.source.get(i) == '\t'
+					if (!(source.buffer.get(i) == ' '
+							|| source.buffer.get(i) == '\r'
+							//|| source.get(i) == '\n'
+							|| source.buffer.get(i) == '\t'
 							)) {
 						i ++;
 						break;
@@ -179,8 +179,8 @@ public class ResultNode extends TreeNode {
 				}
 				int length = exit - i;
 				byte[] data = new byte[length];
-				source.position(i);
-				source.get(data, 0, length);
+				source.buffer.position(i);
+				source.buffer.get(data, 0, length);
 				stringBuilder.append(new String(data).replaceAll("\n", ""));
 				stringBuilder.append(getExitLabel().replaceAll("\n", ""));
 			}

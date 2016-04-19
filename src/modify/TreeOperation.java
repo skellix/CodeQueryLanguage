@@ -8,10 +8,12 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.MappedByteBuffer;
+import java.nio.channels.FileLock;
 import java.nio.channels.FileChannel.MapMode;
 
 import treeparser.TreeNode;
 import treeparser.TreeParser;
+import treeparser.io.IOSource;
 import treeparser.query.QueryNode;
 import treeparser.query.QueryParser;
 import treeparser.query.ResultNode;
@@ -23,6 +25,7 @@ public class TreeOperation {
 	QueryNode after = null;
 	QueryNode into = null;
 	boolean includeSiblings = false;
+	boolean autoindent = false;
 
 	public TreeOperation(String fileName) {
 		this.fileName = fileName;
@@ -50,43 +53,36 @@ public class TreeOperation {
 		return this;
 	}
 	
+	public TreeOperation autoindent() {
+		autoindent = true;
+		return this;
+	}
+	
 	public TreeOperation includeSiblings() {
 		includeSiblings = true;
 		return this;
 	}
 	
-	public ResultNode get(String path) {
+	private ResultNode unsafeGet(String path) {
 		
-		RandomAccessFile file = null;
-		try {
-			file = new RandomAccessFile(fileName, "r");
-		} catch (FileNotFoundException e) {
-			e.printStackTrace();
-			System.exit(-1);
-		}
+		IOSource source = new IOSource(fileName);
 		
-		MappedByteBuffer map = null;
-		try {
-			map = file.getChannel().map(MapMode.READ_ONLY, 0, file.length());
-		} catch (IOException e) {
-			e.printStackTrace();
-			System.exit(-1);
-		}
-		
-		TreeNode root = TreeParser.parse(map);
+		TreeNode root = TreeParser.parse(source);
 		
 		QueryNode query = QueryParser.parse(path);
 		query.setResultInheritsSiblings(includeSiblings);
 		
 		ResultNode node = root.query(query);
 		
-		try {
-			file.close();
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
+		return node;
+	}
+	
+	public ResultNode get(String path) {
+		
+		ResultNode node = unsafeGet(path);
 		
 		includeSiblings = false;
+		autoindent = false;
 		before = null;
 		after = null;
 		into = null;
@@ -96,26 +92,16 @@ public class TreeOperation {
 
 	public TreeOperation insert(String insertData) {
 		
-		RandomAccessFile file = null;
-		try {
-			file = new RandomAccessFile(fileName, "rw");
-		} catch (FileNotFoundException e) {
-			e.printStackTrace();
-			System.exit(-1);
-		}
+		IOSource source = new IOSource(fileName);
+		
+		int insertLength = insertData.getBytes().length;
 		
 		int insertPoint = -1;
 		
 		{
-			MappedByteBuffer map = null;
-			try {
-				map = file.getChannel().map(MapMode.READ_WRITE, 0, file.length());
-			} catch (IOException e) {
-				e.printStackTrace();
-				System.exit(-1);
-			}
+			int mapSize = source.buffer.limit();
 			
-			TreeNode root = TreeParser.parse(map);
+			TreeNode root = TreeParser.parse(source);
 			
 			if (before != null) {
 				
@@ -148,46 +134,12 @@ public class TreeOperation {
 				insertPoint = node.getLastChild().enter + 1;
 			}
 			
-			try {
-				
-				Field cleanerField = map.getClass().getDeclaredField("cleaner");
-				boolean accessible = cleanerField.isAccessible();
-				cleanerField.setAccessible(true);
-				Object cleaner = cleanerField.get(map);
-				Method method = cleaner.getClass().getDeclaredMethod("clean");
-				method.invoke(cleaner);
-				cleanerField.setAccessible(accessible);
-				
-			} catch (NoSuchFieldException e1) {
-				e1.printStackTrace();
-				System.exit(-1);
-			} catch (IllegalArgumentException e) {
-				e.printStackTrace();
-				System.exit(-1);
-			} catch (IllegalAccessException e) {
-				e.printStackTrace();
-				System.exit(-1);
-			} catch (NoSuchMethodException e) {
-				e.printStackTrace();
-				System.exit(-1);
-			} catch (SecurityException e) {
-				e.printStackTrace();
-				System.exit(-1);
-			} catch (InvocationTargetException e) {
-				e.printStackTrace();
-				System.exit(-1);
-			}
+			TreeModifier.insertDataInMap(insertData, insertPoint, source, mapSize);
 		}
 		
-		TreeModifier.insertData(insertData, insertPoint, file);
-		
-		try {
-			file.close();
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
 		
 		includeSiblings = false;
+		autoindent = false;
 		before = null;
 		after = null;
 		into = null;
@@ -196,26 +148,13 @@ public class TreeOperation {
 	}
 
 	public TreeOperation delete(String path) {
-		RandomAccessFile file = null;
-		try {
-			file = new RandomAccessFile(fileName, "rw");
-		} catch (FileNotFoundException e) {
-			e.printStackTrace();
-			System.exit(-1);
-		}
+		
+		IOSource source = new IOSource(fileName);
 		
 		long startPoint = -1;
 		long dataLength = -1;
 		{
-			MappedByteBuffer map = null;
-			try {
-				map = file.getChannel().map(MapMode.READ_WRITE, 0, file.length());
-			} catch (IOException e) {
-				e.printStackTrace();
-				System.exit(-1);
-			}
-			
-			TreeNode root = TreeParser.parse(map);
+			TreeNode root = TreeParser.parse(source);
 			
 			QueryNode query = QueryParser.parse(path);
 			
@@ -229,47 +168,12 @@ public class TreeOperation {
 			
 			startPoint = dataStart.start;
 			dataLength = dataEnd.end - dataStart.start;
-			
-			try {
-				
-				Field cleanerField = map.getClass().getDeclaredField("cleaner");
-				boolean accessible = cleanerField.isAccessible();
-				cleanerField.setAccessible(true);
-				Object cleaner = cleanerField.get(map);
-				Method method = cleaner.getClass().getDeclaredMethod("clean");
-				method.invoke(cleaner);
-				cleanerField.setAccessible(accessible);
-				
-			} catch (NoSuchFieldException e1) {
-				e1.printStackTrace();
-				System.exit(-1);
-			} catch (IllegalArgumentException e) {
-				e.printStackTrace();
-				System.exit(-1);
-			} catch (IllegalAccessException e) {
-				e.printStackTrace();
-				System.exit(-1);
-			} catch (NoSuchMethodException e) {
-				e.printStackTrace();
-				System.exit(-1);
-			} catch (SecurityException e) {
-				e.printStackTrace();
-				System.exit(-1);
-			} catch (InvocationTargetException e) {
-				e.printStackTrace();
-				System.exit(-1);
-			}
 		}
 		
-		TreeModifier.deleteData(startPoint, dataLength, file);
-		
-		try {
-			file.close();
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
+		TreeModifier.deleteData(startPoint, dataLength, source);
 		
 		includeSiblings = false;
+		autoindent = false;
 		before = null;
 		after = null;
 		into = null;
