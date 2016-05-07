@@ -1,8 +1,10 @@
 package treeparser.query;
 
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import treeparser.TreeNode;
@@ -16,20 +18,6 @@ public class QueryNode extends TreeNode {
 	public QueryNode() {
 		super();
 	}
-	
-	/*public QueryNode(String queryString) {
-		TreeNode root = parseAsQuery(TreeParser.parse(queryString));
-		this.source = root.source;
-		this.children = root.children;
-
-		this.start = root.start;
-		this.enter = root.enter;
-		this.exit = root.exit;
-		this.end = root.end;
-
-		this.line = root.line;
-		this.exitLine = root.exitLine;
-	}//*/
 
 	public QueryNode(IOSource source, int i) {
 		super(source, i);
@@ -60,6 +48,9 @@ public class QueryNode extends TreeNode {
 	public String axesString = null;
 	
 	private boolean hasAxesChange() {
+		if (axesString != null) {
+			return axesString.contains("::");
+		}
 		if (start == -1) {
 			return false;
 		} else if (enter == -1) {
@@ -67,25 +58,445 @@ public class QueryNode extends TreeNode {
 		} else {
 			axesString = getEnterLabel();
 		}
-		if (axesString.startsWith("child::")
-				|| axesString.startsWith("child-or-self::")
-				|| axesString.startsWith("parent::")
-				|| axesString.startsWith("descendent::")
-				|| axesString.startsWith("descendent-or-self::")
-				|| axesString.startsWith("ancestor::")
-				|| axesString.startsWith("ancestor-or-self::")
-				|| axesString.startsWith("following::")
-				|| axesString.startsWith("following-sibling::")
-				|| axesString.startsWith("preceding::")
-				|| axesString.startsWith("preceding-sibling::")
-				|| axesString.startsWith("previous::")) {
+		if (axesString.contains("::")) {
 			return true;
 		}
 		return false;
 	}
+	
+	public Collection<TreeNode> query(Collection<TreeNode> input) {
+		
+		return query(input, false);
+	}
+	
+	public Collection<TreeNode> query(Collection<TreeNode> input, boolean isContinued) {
+		
+		ArrayList<TreeNode> output = new ArrayList<TreeNode>();
+		
+		for (int i = 0 ; i < steps.size() ; i ++) {
+			
+			QueryNode step = steps.get(i);
+			
+			Iterator<TreeNode> inputIterator = input.iterator();
+			
+			while (inputIterator.hasNext()) {
+				
+				TreeNode node = inputIterator.next();
+				
+				Collection<TreeNode> children = null;
+				
+				if (step.hasAxesChange()) {
+					
+					children = changeAxes(step.axesString, step, node);
+					
+					if (children != null) {
+						output.addAll(children);
+					}
+					
+				} else {
+					
+					if (i != 0 || isContinued) {
+						node = node.getNextSibling();
+					}
+					children = node.getPostModifiersQueryMatch(step);
+					
+					if (children != null) {
+						if (i + 1 < steps.size()) {
+							
+							output.add(node);
+							
+						} else {
+							
+							output.addAll(children);
+						}
+					}
+				}
+			}
+			
+			input = output;
+			output = new ArrayList<TreeNode>();
+		}
+		
+		return input;
+	}
+
+	private Collection<TreeNode> changeAxes(String axesString, QueryNode step, TreeNode node) {
+		
+		String axesModifier = null;
+		
+		if (axesString.contains("::")) {
+			
+			int index = axesString.indexOf("::");
+			
+			if (index != -1) {
+				axesModifier = axesString.substring(0, index);
+				axesString = axesString.substring(index + "::".length());
+			}
+		}
+		
+		if (axesModifier != null) {
+			
+			if (axesModifier.equals("first")) {
+				
+				Collection<TreeNode> children = changeAxes(axesString, step, node);
+				
+				if (children != null) {
+					
+					Iterator<TreeNode> iterator = children.iterator();
+					if (iterator.hasNext()) {
+						
+						return Arrays.asList(iterator.next());
+					}
+				}
+				
+				return null;
+				
+			} else if (axesModifier.equals("last")) {
+				
+				Collection<TreeNode> children = changeAxes(axesString, step, node);
+				
+				if (children != null) {
+					
+					TreeNode last = null;
+					Iterator<TreeNode> iterator = children.iterator();
+					
+					if (iterator.hasNext()) {
+						last = iterator.next();
+					}
+					
+					if (last != null) {
+						return Arrays.asList(last);
+					}
+				}
+				
+				return null;
+				
+			} else if (axesModifier.equals("child")) {
+				
+				return queryChildAxes(axesString, step, node);
+				
+			} else if (axesModifier.equals("child-or-self")) {
+				
+				LinkedList<TreeNode> result = new LinkedList<TreeNode>();
+				Collection<TreeNode> childAxes = queryChildAxes(axesString, step, node);
+				Collection<TreeNode> thisAxes = queryThisAxes(axesString, step, node);
+				
+				if (thisAxes != null) {
+					result.addAll(thisAxes);
+				}
+				if (childAxes != null) {
+					result.addAll(childAxes);
+				}
+				
+				return result;
+				
+			} else if (axesModifier.equals("parent")) {
+				
+				return queryParentAxes(axesString, step, node);
+				
+			} else if (axesModifier.equals("descendent")) {
+				
+				return queryDescendentAxes(axesString, step, node);
+				
+			} else if (axesModifier.equals("descendent-or-self")) {
+				
+				LinkedList<TreeNode> result = new LinkedList<TreeNode>();
+				Collection<TreeNode> descendentAxes = queryDescendentAxes(axesString, step, node);
+				Collection<TreeNode> thisAxes = queryThisAxes(axesString, step, node);
+				
+				if (thisAxes != null) {
+					result.addAll(thisAxes);
+				}
+				if (descendentAxes != null) {
+					result.addAll(descendentAxes);
+				}
+				
+				return result;
+				
+			} else if (axesModifier.equals("ancestor")) {
+				
+				return queryAncestorAxes(axesString, step, node);
+				
+			} else if (axesModifier.equals("ancestor-or-self")) {
+				
+				LinkedList<TreeNode> result = new LinkedList<TreeNode>();
+				Collection<TreeNode> ancestorAxes = queryAncestorAxes(axesString, step, node);
+				Collection<TreeNode> thisAxes = queryThisAxes(axesString, step, node);
+				
+				if (ancestorAxes != null) {
+					result.addAll(ancestorAxes);
+				}
+				if (thisAxes != null) {
+					result.addAll(thisAxes);
+				}
+				
+				return result;
+				
+			} else if (axesModifier.equals("following")) {
+				
+				return queryFollowingAxes(axesString, step, node);
+				
+			} else if (axesModifier.equals("following-sibling")) {
+				
+				return queryFollowingSiblingAxes(axesString, step, node);
+				
+			} else if (axesModifier.equals("preceding")) {
+				
+				return queryPrecedingAxes(axesString, step, node);
+				
+			} else if (axesModifier.equals("preceding-sibling")) {
+				
+				return queryPrecedingSiblingAxes(axesString, step, node);
+			}
+		}
+		String message = String.format("Unknown axis modifier '%s' in query at index %d", axesModifier, step.start);
+		new Exception(message).printStackTrace();
+		System.exit(-1);
+		return null;
+	}
+
+	private Collection<TreeNode> queryPrecedingSiblingAxes(String axesString, QueryNode step, TreeNode node) {
+		
+		LinkedList<TreeNode> out = new LinkedList<TreeNode>();
+		node = node.getPreviousSibling();
+		
+		while (node != null) {
+			
+			Collection<TreeNode> matches = queryThisAxes(axesString, step, node);
+			
+			if (matches != null) {
+				
+				out.addAll(matches);
+			}
+			
+			node = node.getPreviousSibling();
+		}
+		
+		if (out.isEmpty()) {
+			return null;
+		}
+		
+		return out;
+	}
+
+	private Collection<TreeNode> queryPrecedingAxes(String axesString, QueryNode step, TreeNode node) {
+		
+		LinkedList<TreeNode> out = new LinkedList<TreeNode>();
+		node = node.getPreviousSibling();
+		
+		while (node != null) {
+			
+			Collection<TreeNode> matches = queryThisAxes(axesString, step, node);
+			
+			if (matches != null) {
+				
+				out.addAll(matches);
+			}
+			
+			Collection<TreeNode> descendentMatches = queryDescendentAxes(axesString, step, node);
+			
+			if (descendentMatches != null) {
+				
+				out.addAll(descendentMatches);
+			}
+			
+			if (node.getPreviousSibling() == null) {
+				
+				if (node.hasParent()) {
+					node = node.parent;
+				}
+			}
+			
+			node = node.getPreviousSibling();
+		}
+		
+		if (out.isEmpty()) {
+			return null;
+		}
+		
+		return out;
+	}
+
+	private Collection<TreeNode> queryFollowingSiblingAxes(String axesString, QueryNode step, TreeNode node) {
+		
+		LinkedList<TreeNode> out = new LinkedList<TreeNode>();
+		node = node.getNextSibling();
+		
+		while (node != null) {
+			
+			Collection<TreeNode> matches = queryThisAxes(axesString, step, node);
+			
+			if (matches != null) {
+				
+				out.addAll(matches);
+			}
+			
+			node = node.getNextSibling();
+		}
+		
+		if (out.isEmpty()) {
+			return null;
+		}
+		
+		return out;
+	}
+
+	private Collection<TreeNode> queryFollowingAxes(String axesString, QueryNode step, TreeNode node) {
+		
+		LinkedList<TreeNode> out = new LinkedList<TreeNode>();
+		node = node.getNextSibling();
+		
+		while (node != null) {
+			
+			Collection<TreeNode> matches = queryThisAxes(axesString, step, node);
+			
+			if (matches != null) {
+				
+				out.addAll(matches);
+			}
+			
+			Collection<TreeNode> descendentMatches = queryDescendentAxes(axesString, step, node);
+			
+			if (descendentMatches != null) {
+				
+				out.addAll(descendentMatches);
+			}
+			
+			if (node.getNextSibling() == null) {
+				
+				if (node.hasParent()) {
+					node = node.parent;
+				}
+			}
+			
+			node = node.getNextSibling();
+		}
+		
+		if (out.isEmpty()) {
+			return null;
+		}
+		
+		return out;
+	}
+
+	private Collection<TreeNode> queryAncestorAxes(String axesString, QueryNode step, TreeNode node) {
+		
+		if (!node.hasParent()) {
+			return null;
+		}
+		
+		LinkedList<TreeNode> out = new LinkedList<TreeNode>();
+		
+		Collection<TreeNode> matches = queryParentAxes(axesString, step, node.parent);
+		
+		if (matches != null) {
+			
+			out.addAll(matches);
+		}
+		
+		Collection<TreeNode> parentMatches = queryAncestorAxes(axesString, step, node.parent);
+		
+		if (parentMatches != null) {
+			
+			out.addAll(parentMatches);
+		}
+		
+		if (out.isEmpty()) {
+			return null;
+		}
+		
+		return out;
+	}
+
+	private Collection<TreeNode> queryDescendentAxes(String axesString, QueryNode step, TreeNode node) {
+		
+		if (!node.hasChildren()) {
+			return null;
+		}
+		
+		LinkedList<TreeNode> out = new LinkedList<TreeNode>();
+		
+		Collection<TreeNode> matches = queryChildAxes(axesString, step, node);
+		
+		if (matches != null) {
+			
+			out.addAll(matches);
+		}
+		
+		Iterator<TreeNode> iterator = node.children.iterator();
+		
+		while (iterator.hasNext()) {
+			
+			TreeNode child = iterator.next();
+			
+			Collection<TreeNode> descendentMatches = queryDescendentAxes(axesString, step, child);
+			
+			if (descendentMatches != null) {
+				
+				out.addAll(descendentMatches);
+			}
+		}
+		
+		if (out.isEmpty()) {
+			return null;
+		}
+		
+		return null;
+	}
+
+	private Collection<TreeNode> queryParentAxes(String axesString, QueryNode step, TreeNode node) {
+		
+		if (!node.hasParent()) {
+			return null;
+		}
+		
+		return queryThisAxes(axesString, step, node.parent);
+	}
+
+	private Collection<TreeNode> queryThisAxes(String axesString, QueryNode step, TreeNode node) {
+		
+		Collection<TreeNode> matches = node.getPostModifiersQueryMatch(step);
+		
+		if (matches != null) {
+			
+			 return Arrays.asList(node);
+		}
+		
+		return null;
+	}
+
+	private Collection<TreeNode> queryChildAxes(String axesString, QueryNode step, TreeNode node) {
+		
+		if (!node.hasChildren()) {
+			return null;
+		}
+		
+		LinkedList<TreeNode> out = new LinkedList<TreeNode>();
+		Iterator<TreeNode> iterator = node.children.iterator();
+		
+		while (iterator.hasNext()) {
+			
+			TreeNode child = iterator.next();
+			
+			Collection<TreeNode> matches = queryThisAxes(axesString, step, child);
+			
+			if (matches != null) {
+				
+				out.addAll(matches);
+			}
+		}
+		
+		if (out.isEmpty()) {
+			return null;
+		}
+		
+		return out;
+	}
 
 	public ResultNode queryNode(TreeNode root) {
+		
 		ResultNode out = new ResultNode(root);
+		
 		if (queryNode(this, root, out)) {
 			if (!this.hasSteps()) {
 				for (ResultNode child : out.children) {
@@ -116,7 +527,6 @@ public class QueryNode extends TreeNode {
 		} else {
 			return null;
 		}
-		//return queryNode(this, root, 0, new ResultNode(null));
 	}
 	
 	protected static boolean queryNode(QueryNode query, TreeNode root, ResultNode out) {
@@ -182,7 +592,6 @@ public class QueryNode extends TreeNode {
 					
 					if (result != null) {
 						
-						//out.siblings.add(result);
 						out.siblings.addAll(result.siblings);
 						out.returnSet.addAll(result.returnSet);
 						result.returnSet.clear();
@@ -207,31 +616,12 @@ public class QueryNode extends TreeNode {
 			}
 		} else {
 			if (out.hasChildren()) {
-//				if (query.hasChildren()) {
-//					for (ResultNode child : out.children) {
-//						if (child.returnSet.size() > 0) {
-//							
-//							out.returnSet.addAll(child.returnSet);
-//							child.returnSet.clear();
-//							
-//							if (resultInheritsSiblings) {
-//								
-//								out.siblings.addAll(child.siblings);
-//								child.siblings.clear();
-//							}
-//						}
-//						
-//						child.parent = out;
-//					}
-//					
-//				} else {
-					for (ResultNode child : out.children) {
-						
-						out.returnSet.add(child);
-						child.returnSet.clear();
-						child.parent = out;
-					}
-//				}
+				for (ResultNode child : out.children) {
+					
+					out.returnSet.add(child);
+					child.returnSet.clear();
+					child.parent = out;
+				}
 			} else {
 				out.returnSet.add(out);
 			}
@@ -256,44 +646,115 @@ public class QueryNode extends TreeNode {
 	}
 
 	private static boolean changeAxes(QueryNode query, TreeNode root, ResultNode out) {
-		String pattern = null;
-		if (query.axesString.contains("::")) {
-			pattern = query.axesString.substring(query.axesString.indexOf("::") + 2);
+		
+		boolean value = doSubAxesModification(query.axesString, query, root, out);
+		
+		return value;
+	}
+
+	private static boolean doSubAxesModification(String axesString, QueryNode query, TreeNode root, ResultNode out) {
+		
+		String axesModifier = null;
+		
+		if (axesString.contains("::")) {
+			
+			int index = axesString.indexOf("::");
+			
+			if (index != -1) {
+				axesModifier = axesString.substring(0, index);
+				axesString = axesString.substring(index + "::".length());
+			}
 		}
-		if (query.axesString.startsWith("child::")) {
-			return queryChildAxes(query, root, out, pattern);
-		} else if (query.axesString.startsWith("child-or-self::")) {
-			boolean childAxes = queryChildAxes(query, root, out, pattern);
-			out.children.clear();
-			boolean thisAxes = queryThisAxes(query, root, out, pattern);
-			return childAxes || thisAxes;
-		} else if (query.axesString.startsWith("parent::")) {
-			return queryParentAxes(query, root, out, pattern);
-		} else if (query.axesString.startsWith("descendent::")) {
-			return queryDescendentAxes(query, root, out, pattern);
-		} else if (query.axesString.startsWith("descendent-or-self::")) {
-			boolean descendentAxes = queryDescendentAxes(query, root, out, pattern);
-			out.children.clear();
-			boolean thisAxes = queryThisAxes(query, root, out, pattern);
-			return descendentAxes || thisAxes;
-		} else if (query.axesString.startsWith("ancestor::")) {
-			return queryAncestorAxes(query, root, out, pattern);
-		} else if (query.axesString.startsWith("ancestor-or-self::")) {
-			boolean ancestorAxes = queryAncestorAxes(query, root, out, pattern);
-			out.children.clear();
-			boolean thisAxes = queryThisAxes(query, root, out, pattern);
-			return ancestorAxes || thisAxes;
-		} else if (query.axesString.startsWith("following::")) {
-			return queryFollowingAxes(query, root, out, pattern);
-		} else if (query.axesString.startsWith("following-sibling::")) {
-			return queryFollowingSiblingAxes(query, root, out, pattern);
-		} else if (query.axesString.startsWith("preceding::")) {
-			return queryPrecedingAxes(query, root, out, pattern);
-		} else if (query.axesString.startsWith("preceding-sibling::")) {
-			return queryPrecedingSiblingAxes(query, root, out, pattern);
-		} else if (query.axesString.startsWith("previous::")) {
-			return queryPreviousAxes(query, root, out, pattern);
+		
+		if (axesModifier != null) {
+			
+			if (axesModifier.equals("first")) {
+				
+				ResultNode result = new ResultNode(new TreeNode());
+				
+				boolean value = doSubAxesModification(axesString, query, root, result);
+				
+				if (value) {
+					
+					((ResultNode) out).children.add(result.getFirstChild());
+					out.add(result.getFirstChild());
+				}
+				
+				return value;
+				
+			} else if (axesModifier.equals("last")) {
+				
+				ResultNode result = new ResultNode(new TreeNode());
+				
+				boolean value = doSubAxesModification(axesString, query, root, result);
+				
+				if (value) {
+					
+					((ResultNode) out).children.add(result.getLastChild());
+					out.add(result.getLastChild());
+				}
+				
+				return value;
+				
+			} else if (axesModifier.equals("child")) {
+				
+				return queryChildAxes(query, root, out, axesString);
+				
+			} else if (axesModifier.equals("child-or-self")) {
+				
+				boolean childAxes = queryChildAxes(query, root, out, axesString);
+				out.children.clear();
+				boolean thisAxes = queryThisAxes(query, root, out, axesString);
+				return childAxes || thisAxes;
+				
+			} else if (axesModifier.equals("parent")) {
+				
+				return queryParentAxes(query, root, out, axesString);
+				
+			} else if (axesModifier.equals("descendent")) {
+				
+				return queryDescendentAxes(query, root, out, axesString);
+				
+			} else if (axesModifier.equals("descendent-or-self")) {
+				
+				boolean descendentAxes = queryDescendentAxes(query, root, out, axesString);
+				out.children.clear();
+				boolean thisAxes = queryThisAxes(query, root, out, axesString);
+				return descendentAxes || thisAxes;
+				
+			} else if (axesModifier.equals("ancestor")) {
+				
+				return queryAncestorAxes(query, root, out, axesString);
+				
+			} else if (axesModifier.equals("ancestor-or-self")) {
+				
+				boolean ancestorAxes = queryAncestorAxes(query, root, out, axesString);
+				out.children.clear();
+				boolean thisAxes = queryThisAxes(query, root, out, axesString);
+				return ancestorAxes || thisAxes;
+				
+			} else if (axesModifier.equals("following")) {
+				
+				return queryFollowingAxes(query, root, out, axesString);
+				
+			} else if (axesModifier.equals("following-sibling")) {
+				
+				return queryFollowingSiblingAxes(query, root, out, axesString);
+				
+			} else if (axesModifier.equals("preceding")) {
+				
+				return queryPrecedingAxes(query, root, out, axesString);
+				
+			} else if (axesModifier.equals("preceding-sibling")) {
+				
+				return queryPrecedingSiblingAxes(query, root, out, axesString);
+				
+			} else if (axesModifier.equals("previous")) {
+				
+				return queryPreviousAxes(query, root, out, axesString);
+			}
 		}
+		
 		return false;
 	}
 
@@ -500,8 +961,6 @@ public class QueryNode extends TreeNode {
 		}
 		if (children.size() > 0) {
 			indent.getAndIncrement();
-			//String format = String.format("$1%%%ds", indent.get() * 2);
-			//String replacement = String.format(format, "");
 			for (TreeNode child : children) {
 				stringBuilder.append("\n");
 				for (int i = indent.get() ; i > 0 ; i --) {
@@ -531,320 +990,4 @@ public class QueryNode extends TreeNode {
 		return stringBuilder.toString();
 	}
 
-	/*protected static ResultNode queryNode2(QueryNode query, TreeNode root, int index, ResultNode out) {
-		if ((query.start == -1) && (root.start == -1)) {
-			ResultNode child = new ResultNode(root);
-			//ArrayList<ResultNode> matchingNodes = new ArrayList<ResultNode>();
-			for (int i = 0 ; i < query.steps.size() ; i ++) {
-				for (int j = 0 ; j < root.children.size() ; j ++) {
-					ResultNode result = queryNode(query.steps.get(i), root.children.get(j), j, child);
-					if (result != null) {
-						child.children.add(result);
-						//matchingNodes.add(result);
-					}
-				}
-			}
-			if (!child.children.isEmpty()) {
-				out.children.add(child);
-				//out = new ResultNode(root, matchingNodes);
-			}
-		} else if (query.enter == -1 && root.enter == -1) {
-			String queryString = new String(query.source, query.start, (query.end - query.start) + 1);
-			String rootString = new String(root.source, root.start, (root.end - root.start) + 1);
-			Matcher matcher = Pattern.compile(queryString).matcher(rootString);
-			if (matcher.find()) {
-				ResultNode child = new ResultNode(root);
-				//ArrayList<ResultNode> matchingNodes = new ArrayList<ResultNode>();
-				//matchingNodes.add(new ResultNode(root));
-				int next = index + 1;
-				if (next < root.parent.children.size()) {
-					for (int i = 0 ; i < query.steps.size() ; i ++) {
-						ResultNode result = queryNode(query.steps.get(i), root.parent.children.get(next), next, child);
-						if (result != null) {
-							child.children.add(result);
-							//matchingNodes.add(result);
-						}
-					}
-				}
-				if (!child.children.isEmpty()) {
-					out.children.add(child);
-					//out = new ResultNode(root, matchingNodes);
-				}
-			}
-		} else if (query.enter != -1 && root.enter != -1 && query.exit != -1 && root.exit != -1) {
-			String queryStartString = new String(query.source, query.start, (query.enter - query.start) + 1);
-			// delimit regex specific parts
-			queryStartString = queryStartString.replaceAll("\\\\(.)", "$1");
-			queryStartString = queryStartString.replaceAll("(?<!\\\\)([\\(\\)\\{\\}\\[\\]])", "\\\\$1");
-			String rootStartString = new String(root.source, root.start, (root.enter - root.start) + 1);
-			Matcher matcher = Pattern.compile(queryStartString).matcher(rootStartString);
-			if (matcher.find()) {
-				String queryEndString = new String(query.source, query.exit, (query.end - query.exit) + 1);
-				// delimit regex specific parts
-				queryEndString = queryEndString.replaceAll("\\\\(.)", "$1");
-				queryEndString = queryEndString.replaceAll("(?<!\\\\)([\\(\\)\\{\\}\\[\\]])", "\\\\$1");
-				String rootEndString = new String(root.source, root.exit, (root.end - root.exit) + 1);
-				matcher = Pattern.compile(queryEndString).matcher(rootEndString);
-				if (matcher.find()) {
-					ResultNode child = new ResultNode(root);
-					//ArrayList<ResultNode> matchingNodes = new ArrayList<ResultNode>();
-					for (int i = 0 ; i < query.children.size() ; i ++) {
-						for (int j = 0 ; j < root.children.size() ; j ++) {
-							ResultNode result = queryTreeNode((QueryNode) query.children.get(i), root.children.get(j), j, child);
-							if (result != null) {
-								child.children.add(result);
-								//matchingNodes.add(result);
-							}
-						}
-					}
-					if (!child.children.isEmpty()) {
-						ArrayList<ResultNode> stepNodes = new ArrayList<ResultNode>();
-						stepNodes.add(child);
-						for (int i = 0 ; i < query.steps.size() ; i ++) {
-							ResultNode nextChild = new ResultNode(root);
-							int next = index + 1;
-							if (next < root.parent.children.size()) {
-								ResultNode result = queryNode(query.steps.get(i), root.parent.children.get(next), next, nextChild);
-								if (result != null) {
-									stepNodes.add(result);
-								} else {
-									return null;
-								}
-							} else {
-								return null;
-							}
-							
-						}
-						out.children.addAll(stepNodes);
-						//out = new ResultNode(new ResultNode(root, stepNodes), matchingNodes);
-					}
-				}
-			}
-		} else if (query.enter == -1 && root.enter != -1) {
-			String queryString = new String(query.source, query.start, (query.end - query.start) + 1);
-			String rootStartString = new String(root.source, root.start, (root.enter - root.start) + 1);
-			Matcher matcher = Pattern.compile(queryString).matcher(rootStartString);
-			if (matcher.find()) {
-				//ResultNode child = new ResultNode(root);
-				ArrayList<ResultNode> matchingNodes = new ArrayList<ResultNode>();
-				matchingNodes.add(new ResultNode(root));
-				//matchingNodes.add(new ResultNode(root));
-				int next = index + 1;
-				if (next < root.parent.children.size()) {
-					for (int i = 0 ; i < query.steps.size() ; i ++) {
-						ResultNode result = queryNode(query.steps.get(i), root.parent.children.get(next), next, new ResultNode(null));
-						if (result != null) {
-							//child.children.add(result);
-							matchingNodes.add(result.children.get(0));
-						}
-					}
-				}
-				if (matchingNodes.size() > 0) {
-					out.children.addAll(matchingNodes);
-					//out = new ResultNode(root, matchingNodes);
-				}
-			}
-		} else {
-			System.err.println("Found case without children!");
-		}
-		return out;
-	}
-	
-	private static ResultNode queryTreeNode(QueryNode query, TreeNode root, int index, ResultNode out) {
-		ResultNode result = queryNode(query, root, index, out);
-		return result;
-	}//*/
-	
-	/*protected static  TreeNode queryNode(TreeNode query, TreeNode root) {
-		TreeNode out = null;
-		if ((query.start == -1) && (root.start == -1)) {
-			if ((root.children.size() > 0) && (query.children.size() > 0)) {
-				out = root.cloneWithoutLinks();
-				for (int i = 0 ; i < query.children.size() ; i ++) {
-					for (int j = 0 ; j < root.children.size() ; j ++) {
-						ArrayList<TreeNode> result = queryLinks(query.children.get(i), root, j);
-						if (result.size() > 0) {
-							for (TreeNode node : result) {
-								out.add(node);
-							}
-						}
-					}
-				}
-			}
-		} else if (query.enter == -1) {
-			if ((root.children.size() > 0) && (query.children.size() > 0)) {
-				out = root.cloneWithoutLinks();
-				for (int i = 0 ; i < query.children.size() ; i ++) {
-					for (int j = 0 ; j < root.children.size() ; j ++) {
-						TreeNode result = queryNode(query.children.get(i), root.children.get(j));
-						if (result != null) {
-							out.add(result);
-						}
-					}
-				}
-			}
-		} else {
-			System.err.println("Found case without children!");
-		}
-		return out;
-	}//*/
-
-	/*private static ArrayList<TreeNode> queryLinks(TreeNode query, TreeNode root, int start) {
-		ArrayList<TreeNode> out = new ArrayList<TreeNode>();
-		for (int i = start ; (i < root.children.size()) && (query != null) ; i ++) {
-			TreeNode child = root.children.get(i);
-			if ((query.children.size() > 0) && (query.enter != -1) && (query.exit != -1)) {
-				if (child.children.size() > 0 && (child.enter != -1) && (child.exit != -1)) {
-					if (query.enter - query.start != child.enter - child.start) {
-						return new ArrayList<TreeNode>();
-					}
-					if (query.end - query.exit != child.end - child.exit) {
-						return new ArrayList<TreeNode>();
-					}
-					for (int j = 0 ; query.start + j <= query.enter && child.start + j <= child.enter; j ++) {
-						if (query.source[query.start + j] != child.source[child.start + j]) {
-							return new ArrayList<TreeNode>();
-						}
-					}
-					for (int j = 0 ; query.exit + j <= query.end && child.exit + j <= child.end; j ++) {
-						if (query.source[query.exit + j] != child.source[child.exit + j]) {
-							return new ArrayList<TreeNode>();
-						}
-					}
-					TreeNode clone = child.cloneWithoutLinks();
-					for (int j = 1 ; j < query.children.size() ; j ++) {
-						for (int k = 0 ; k < child.children.size() ;  k ++) {
-							ArrayList<TreeNode> result = queryLinks(query.children.get(j), child, k);
-							if (result.size() > 0) {
-								for (TreeNode node : result) {
-									clone.add(node);
-								}
-							} else {
-								return new ArrayList<TreeNode>();
-							}
-						}
-					}
-					out.add(clone);
-				} else {
-					return new ArrayList<TreeNode>();
-				}
-			} else {
-				if (query.source == null) {
-					return out;
-				}
-				// TODO add fix for "()" matching everything
-				Pattern pattern = Pattern.compile(new String(query.source, query.start, (query.end - query.start) + 1));
-				Matcher matcher = pattern.matcher(new String(child.source, child.start, (child.end - child.start) + 1));
-				if (matcher.find()) {
-					out.add(child.cloneWithoutLinks());
-				} else {
-					return new ArrayList<TreeNode>();
-				}
-			}
-			// post loop
-			if (query.children.size() == 0) {
-				break;
-			}
-			query = query.children.get(0);
-			if (query.source == null) {
-				return out;
-			}
-		}
-		return out;
-	}//*/
-	
-	/*private static TreeNode parseAsQuery(TreeNode root) {
-		if (root.start != -1) {
-			if (root.enter != -1) {
-				if (root.exit != -1) {
-					//
-				} else {
-					System.err.printf("[ERROR] End of block not found for block that starts on line %d\n", root.line);
-				}
-			} else if (root.exit != -1) {
-				//
-			} else {
-				ArrayList<TreeNode> newChildren = new ArrayList<TreeNode>();
-				{
-					int startIndex = root.start;
-					int endIndex = startIndex;
-					int i = startIndex;
-					for (; i <= root.end ; i ++) {
-						if (root.source[i] == '/') {
-							if (i == 0) {
-								//newChildren.add(new TreeNode(root.source, -1, -1, root.line));
-							} else {
-								endIndex = i - 1;
-								newChildren.add(new TreeNode(root.source, startIndex, endIndex, root.line));
-							}
-							startIndex = i + 1;
-						}
-					}
-					if (startIndex > endIndex) {
-						endIndex = i - 1;
-						TreeNode parent = root.parent;
-						if (endIndex < startIndex) {
-							outer: for (int j = 0 ; j < parent.children.size() ; j ++) {
-								if (parent.children.get(j) == root) {
-									if (j + 1 < parent.children.size()) {
-										while (++ j < parent.children.size()) {
-											TreeNode child = parent.children.remove(j);
-											if (child.children.size() > 0) {
-												TreeNode emptyNode = new TreeNode();
-												emptyNode.parent = child;
-												child.children.add(0, emptyNode);
-											}
-											newChildren.add(child);
-											if (j + 1 < parent.children.size()) {
-												TreeNode next = parent.children.get(j + 1);
-												if (next.start != -1 && next.source[next.start] == '/') {
-													startIndex = next.start;
-													endIndex = startIndex;
-													i = startIndex;
-													for (; i <= next.end ; i ++) {
-														if (next.source[i] == '/') {
-															if (i == 0) {
-																//newChildren.add(new TreeNode(root.source, -1, -1, root.line));
-															} else {
-																endIndex = i - 1;
-																newChildren.add(new TreeNode(next.source, startIndex, endIndex, next.line));
-															}
-															startIndex = i + 1;
-														}
-													}
-													if (startIndex <= endIndex) {
-														break outer;
-													}
-												}
-											}
-										}
-									} else {
-										System.err.printf("[ERROR] Expecting node after '/' in path on line %d\n", root.line);
-									}
-									break;
-								}
-							}
-						} else {
-							newChildren.add(new TreeNode(root.source, startIndex, endIndex, root.line));
-						}
-					}
-				}
-				for (int i = 1 ; i < newChildren.size() ; i ++) {
-					newChildren.get(i - 1).add(newChildren.get(i));
-				}
-				if (newChildren.size() > 0) {
-					root.start = newChildren.get(0).start;
-					root.end = newChildren.get(0).end;
-					root.children = newChildren.get(0).children;
-				}
-			}
-		} else {
-			//System.err.printf("[ERROR] No start found for block reported on line %d\n", root.line);
-		}
-		for (int i = 0 ; i < root.children.size() ; i ++) {
-			System.out.print("");
-			parseAsQuery(root.children.get(i));
-		}
-		return root;
-	}//*/
 }

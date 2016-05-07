@@ -17,7 +17,7 @@ public class TestJavaModification {
 /* reset the data */
 		
 		{
-			File testFile = new File("src/modify/test/Main.java");
+			File testFile = new File("src/modify/test/Foo.java");
 			
 			if (!testFile.exists()) {
 				try {
@@ -39,9 +39,9 @@ public class TestJavaModification {
 				file.setLength(0L);
 				file.write((""
 						 + "package modify.test;\n"
-						 + "public class Main {\n"
+						 + "public class Foo {\n"
 						 + "\n"
-						 + "\tpublic static void main(String[] args) {\n"
+						 + "\tpublic static void bar(String[] args) {\n"
 						 + "\n"
 						 + "\t}\n"
 						 + "}").getBytes());
@@ -61,7 +61,7 @@ public class TestJavaModification {
 				System.out.print("");
 			}
 			
-			TreeOperation data = new TreeOperation("src/modify/test/Main.java")
+			TreeOperation data = new TreeOperation("src/modify/test/Foo.java")
 					.into("public/class/.*/{public/static/void/.*/.*/.*}")
 					.insert("System.out.println(\"Hello, world!\");\n");
 		}

@@ -2,8 +2,10 @@ package treeparser.query;
 
 import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import treeparser.TreeNode;
+import treeparser.io.IOSource;
 
 public class ResultNode extends TreeNode {
 	public TreeNode thisNode = null;
@@ -111,15 +113,25 @@ public class ResultNode extends TreeNode {
 	
 	@Override
 	public String toString() {
-		return toString(new AtomicInteger(0));
+		return toString(new AtomicInteger(-1), new AtomicReference<IOSource>(null));
 	}
 	
-	protected String toString(AtomicInteger line) {
+	protected String toString(AtomicInteger line, AtomicReference<IOSource> currentSource) {
 		if (children.size() > 1) {
+			
 			StringBuilder stringBuilder = new StringBuilder();
+			
 			if (start != -1) {
+				
+				if (this.source != currentSource.get()) {
+					
+					stringBuilder.append("\n");
+					currentSource.set(this.source);
+					line.set(this.line);
+				}
+				
 				if (thisNode.line != line.get()) {
-					if (line.get() > 0) {
+					if (line.get() > -1) {
 						while (line.get() < thisNode.line) {
 							line.getAndIncrement();
 							stringBuilder.append("\n");
@@ -127,35 +139,24 @@ public class ResultNode extends TreeNode {
 					}
 					line.set(thisNode.line);
 				}
-				int i = start - 1;
-				for (; i >= 0 ; i --) {
-					if (!(source.buffer.get(i) == ' '
-							|| source.buffer.get(i) == '\r'
-							//|| source.get(i) == '\n'
-							|| source.buffer.get(i) == '\t'
-							)) {
-						i ++;
-						break;
-					}
-				}
-				if (i >= 0) {
-					int length = start - i;
-					byte[] data = new byte[length];
-					source.buffer.position(i);
-					source.buffer.get(data, 0, length);
-					stringBuilder.append(new String(data).replaceAll("\n", ""));
-				}
+				stringBuilder.append(this.getLeadingWhitespace());
 				if (enter != -1) {
 					stringBuilder.append(getEnterLabel().replaceAll("\n", ""));
 				} else if (end != -1) {
 					stringBuilder.append(getLabel().replaceAll("\n", ""));
 				}
 			}
+			
+			if (line.get() == -1) {
+				line.set(this.line);
+			}
+			
 			if (children.size() > 0) {
 				for (ResultNode child : children) {
-					stringBuilder.append(child.toString(line));
+					stringBuilder.append(child.toString(line, currentSource));
 				}
 			}
+			
 			if (exit != -1) {
 				if (thisNode.exitLine != -1 && thisNode.exitLine != line.get()) {
 					if (line.get() > 0) {
@@ -166,35 +167,27 @@ public class ResultNode extends TreeNode {
 					}
 					line.set(thisNode.exitLine);
 				}
-				int i = exit - 1;
-				for (; i >= 0 ; i --) {
-					if (!(source.buffer.get(i) == ' '
-							|| source.buffer.get(i) == '\r'
-							//|| source.get(i) == '\n'
-							|| source.buffer.get(i) == '\t'
-							)) {
-						i ++;
-						break;
-					}
-				}
-				int length = exit - i;
-				byte[] data = new byte[length];
-				source.buffer.position(i);
-				source.buffer.get(data, 0, length);
-				stringBuilder.append(new String(data).replaceAll("\n", ""));
+				stringBuilder.append(this.getFollowingWhitespace());
 				stringBuilder.append(getExitLabel().replaceAll("\n", ""));
 			}
+			
 			return stringBuilder.toString();
+			
 		} else if (thisNode == null) {
+			
 			StringBuilder stringBuilder = new StringBuilder();
+			
 			if (children.size() > 0) {
 				for (ResultNode child : children) {
-					stringBuilder.append(child.toString(line));
+					stringBuilder.append(child.toString(line, currentSource));
 				}
 			}
+			
 			return stringBuilder.toString();
+			
 		} else {
-			return thisNode.treeNodeToString(line);
+			
+			return thisNode.treeNodeToString(line, currentSource);
 		}
 	}
 }

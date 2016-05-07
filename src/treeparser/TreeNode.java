@@ -1,9 +1,13 @@
 package treeparser;
 
+import java.io.File;
+import java.io.Serializable;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -11,11 +15,10 @@ import treeparser.io.IOSource;
 import treeparser.query.QueryNode;
 import treeparser.query.ResultNode;
 
-public class TreeNode {
+public class TreeNode implements Serializable {
 
 	public TreeNode parent = null;
 	public IOSource source = null;
-	//public String value = null;
 	public int line = -1;
 	public int exitLine = -1;
 	public int start = -1;
@@ -26,6 +29,13 @@ public class TreeNode {
 
 	public TreeNode() {
 		// TODO Auto-generated constructor stub
+	}
+	
+	public TreeNode(String source) {
+		TreeNode node = TreeParser.parse(source);
+		if (node != null) {
+			add(node.children);
+		}
 	}
 
 	public TreeNode(IOSource source, int start) {
@@ -200,6 +210,13 @@ public class TreeNode {
 		return children != null && !children.isEmpty();
 	}
 
+	public void add(ArrayList<TreeNode> childNodes) {
+		for (TreeNode childNode : childNodes) {
+			children.add(childNode);
+			childNode.parent = this;
+		}
+	}
+	
 	public void add(TreeNode childNode) {
 		children.add(childNode);
 		childNode.parent = this;
@@ -275,6 +292,111 @@ public class TreeNode {
 		return query.queryNode(this);
 	}
 	
+	public Collection<TreeNode> getPostModifiersQueryMatch(QueryNode query) {
+		
+		if (query.isEmpty() == this.isEmpty()) {
+			
+			if (query.axesString.equals(".*")) {
+				
+				return Arrays.asList(this);
+			}
+			
+			if (query.isEnclosing() == this.isEnclosing()) {
+				
+				if (this.isEnclosing()) {
+					
+					String enter = query.getEnterLabel();
+					String exit = query.getExitLabel();
+					
+					int index = enter.lastIndexOf("::");
+					
+					if (index != -1) {
+						enter = enter.substring(index + "::".length());
+					}
+					
+					Matcher enterMatcher = Pattern.compile(
+							enter.replaceAll("([\\{\\(\\[])", "\\\\$1").replaceAll("[\\\\]([\\\\]+)", "$1").replaceAll("[\\\\]{2}", "\\\\")
+							).matcher(this.getEnterLabel());
+					
+					Matcher exitMatcher = Pattern.compile(
+							exit.replaceAll("([\\}\\)\\]])", "\\\\$1").replaceAll("[\\\\]([\\\\]+)", "$1").replaceAll("[\\\\]{2}", "\\\\")
+							).matcher(this.getExitLabel());
+					
+					if (enterMatcher.find() && exitMatcher.find()) {
+						
+						// TODO: finish this
+						if (query.hasSteps()) {
+							
+							return query.query(this.children);
+							
+						} else {
+							
+							return Arrays.asList(this);
+						}
+					}
+					
+				} else {
+					
+					String pattern = query.getLabel();
+					
+					int index = pattern.lastIndexOf("::");
+					
+					if (index != -1) {
+						pattern = pattern.substring(index + "::".length());
+					}
+					
+					Matcher matcher = Pattern.compile(
+							pattern.replaceAll("[\\\\]([\\\\]*)", "$1").replaceAll("[\\\\][\\\\]", "\\\\")
+							).matcher(this.getLabel());
+					
+					if (matcher.find()) {
+						
+						return Arrays.asList(this);
+					}
+				}
+			}
+		}
+		
+		return null;
+	}
+	
+	public Collection<TreeNode> getMatch(QueryNode query) {
+		
+		if (query.isEmpty() == this.isEmpty()) {
+			
+			if (this.isEnclosing() == this.isEnclosing()) {
+				
+				if (query.hasSteps() && this.hasChildren()) {
+					
+					Collection<TreeNode> result = query.query(this.children);
+					
+					return result;
+					
+				} else if (!this.hasChildren()) {
+					
+					String pattern = null;
+					int index = query.axesString.lastIndexOf("::");
+					
+					if (index != -1) {
+						pattern = query.axesString.substring(index + "::".length());
+					} else {
+						pattern = query.axesString;
+					}
+					
+					String text = this.getLabel();
+					Matcher matcher = Pattern.compile(pattern).matcher(text);
+					
+					if (matcher.find()) {
+						
+						return children;
+					}
+				}
+			}
+		}
+		
+		return null;
+	}
+	
 	public boolean matchesPattern(String pattern) {
 		String text = null;
 		if (this.start == -1) {
@@ -283,7 +405,7 @@ public class TreeNode {
 		} else if (this.enter == -1) {
 			text = this.getLabel();
 		} else {
-			text = this.getEnterLabel();
+			text = this.getEnterLabel() + this.getExitLabel();
 		}
 		Matcher matcher = Pattern.compile(pattern).matcher(text);
 		return matcher.find();
@@ -362,16 +484,45 @@ public class TreeNode {
 
 	@Override
 	public String toString() {
-		return treeNodeToString(new AtomicInteger(-1));
+		return treeNodeToString(new AtomicInteger(-1), new AtomicReference<IOSource>(null));
 	}
 	
-	public String treeNodeToString(AtomicInteger line) {
+	public String treeNodeToString(AtomicInteger line, AtomicReference<IOSource> currentSource) {
+		
 		StringBuilder stringBuilder = new StringBuilder();
+		
 		if (start != -1) {
+			
+			if (this.source != currentSource.get()) {
+				
+				stringBuilder.append("\n");
+				currentSource.set(this.source);
+				line.set(this.line);
+			}
+			
 			if (this.line != line.get()) {
 				if (line.get() != -1) {
-					if (line.get() > 0) {
+					if (line.get() > -1) {
+						
+						TreeNode sibling = this.getPreviousSibling();
+						if (sibling != null
+								&& !( sibling.line == line.get()
+								|| sibling.exitLine == line.get() )) {
+							
+							stringBuilder.append("\n");
+							
+							if (sibling.isEnclosing()) {
+								
+								line.set(sibling.exitLine);
+								
+							} else {
+								
+								line.set(this.line);
+							}
+						}
+						
 						while (line.get() < this.line) {
+							
 							line.getAndIncrement();
 							stringBuilder.append("\n");
 						}
@@ -379,35 +530,36 @@ public class TreeNode {
 				}
 				line.set(this.line);
 			}
-			int i = this.start - 1;
-			for (; i >= 0 ; i --) {
-				if (!(this.source.buffer.get(i) == ' '
-						|| this.source.buffer.get(i) == '\r'
-						//||this.source.get(i) == '\n'
-						|| this.source.buffer.get(i) == '\t'
-						)) {
-					i ++;
-					break;
-				}
-			}
-			if (i >= 0) {
-				int length = start - i;
-				byte[] data = new byte[length];
-				source.buffer.position(i);
-				source.buffer.get(data, 0, length);
-				stringBuilder.append(new String(data).replaceAll("\n", ""));
-			}
-			if (enter != -1) {
+			
+			stringBuilder.append(this.getLeadingWhitespace());
+			
+			if (this.isEnclosing()) {
 				stringBuilder.append(getEnterLabel().replaceAll("\n", ""));
-			} else if (end != -1) {
-				stringBuilder.append(getLabel().replaceAll("\n", ""));
+			} else if (!this.isEmpty()) {
+				String label = getLabel();
+				if (label == null) {
+					System.out.println(label);
+					for (int i = start ; i < end ; i ++) {
+						source.buffer.position(i);
+						byte b = source.buffer.get();
+						System.out.printf("%c", (char) b);
+					}
+					label = getLabel();
+				}
+				stringBuilder.append(label.replaceAll("\n", ""));
 			}
 		}
+		
+		if (line.get() == -1) {
+			line.set(this.line);
+		}
+		
 		if (children.size() > 0) {
 			for (TreeNode child : children) {
-				stringBuilder.append(child.treeNodeToString(line));
+				stringBuilder.append(child.treeNodeToString(line, currentSource));
 			}
 		}
+		
 		if (exit != -1) {
 			if (this.exitLine != -1 && this.exitLine != line.get()) {
 				if (line.get() > 0) {
@@ -418,71 +570,10 @@ public class TreeNode {
 				}
 				line.set(this.exitLine);
 			}
-			int i = this.exit - 1;
-			for (; i >= 0 ; i --) {
-				if (!(this.source.buffer.get(i) == ' '
-						|| this.source.buffer.get(i) == '\r'
-						//|| this.source.get(i) == '\n'
-						|| this.source.buffer.get(i) == '\t'
-						)) {
-					i ++;
-					break;
-				}
-			}
-			int length = exit - i;
-			byte[] data = new byte[length];
-			source.buffer.position(i);
-			source.buffer.get(data, 0, length);
-			stringBuilder.append(new String(data).replaceAll("\n", ""));
+			stringBuilder.append(this.getFollowingWhitespace());
 			stringBuilder.append(getExitLabel().replaceAll("\n", ""));
 		}
+		
 		return stringBuilder.toString();
 	}
-
-//	protected String toString(AtomicInteger indent) {
-//		StringBuilder stringBuilder = new StringBuilder();
-//		if (start != -1) {
-//			for (int i = indent.get() ; i > 0 ; i --) {
-//				stringBuilder.append('\t');
-//			}
-//			if (enter != -1) {
-//				stringBuilder
-//						.append(new String(source, start, (enter - start) + 1).replaceAll("\n", ""));
-//			} else if (end != -1) {
-//				stringBuilder
-//						.append(new String(source, start, (end - start) + 1).replaceAll("\n", ""));
-//			}
-//		} else if (children.size() > 0) {
-//			for (int i = indent.get() ; i > 0 ; i --) {
-//				stringBuilder.append('\t');
-//			}
-//		}
-//		if (children.size() > 0) {
-//			stringBuilder.append("{\n");
-//			indent.getAndIncrement();
-//			int lastLine = children.get(0).line;
-//			for (TreeNode child : children) {
-//				if (child.line != lastLine) {
-//					lastLine = child.line;
-//					stringBuilder.append("\n");
-//				}
-//				stringBuilder.append(child.toString(indent));
-//			}
-//			stringBuilder.append("\n");
-//			indent.getAndDecrement();
-//			for (int i = indent.get() ; i > 0 ; i --) {
-//				stringBuilder.append('\t');
-//			}
-//			stringBuilder.append("}");
-//		}
-//		if (exit != -1) {
-//			if (children.size() > 0) {
-//				for (int i = indent.get() ; i > 0 ; i --) {
-//					stringBuilder.append('\t');
-//				}
-//			}
-//			stringBuilder.append(new String(source, exit, (end - exit) + 1).replaceAll("\n", ""));
-//		}
-//		return stringBuilder.toString();
-//	}
 }

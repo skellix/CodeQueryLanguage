@@ -21,6 +21,7 @@ public class TreeParser {
 	public static TreeNode parse(File input) {
 		
 		TreeNode root = new TreeNode();
+		//System.out.println("Parsig input file: " + input.getPath());
 		IOSource source = new IOSource(input);
 		doParse(root, source, new AtomicInteger(0), new AtomicInteger(0));
 		
@@ -79,12 +80,43 @@ public class TreeParser {
 						
 						for (i.getAndIncrement() ; i.get() < source.buffer.limit() ; i.getAndIncrement()) {
 							c = (char) source.buffer.get(i.get());
-							if (!delimit && (c == '"')) {
+							if (delimit) {
+								delimit = false;
+							} else if (c == '"') {
 								break;
 							} else if (c == '\\') {
 								delimit = true;
-							} else {
+							}
+						}
+						delimit = false;
+						childNode.end = i.get();
+						root.add(childNode);
+					}
+					break;
+				}
+				case '\'' : {
+					if (delimit) {
+						delimit = false;
+						if (whitespace) {
+							whitespace = false;
+							node = new TreeNode(source, i.get());
+							node.line = line.get();
+							node.start = i.get();
+						}
+					} else {
+						whitespace = true;
+						TreeNode childNode = new TreeNode(source, i.get());
+						childNode.line = line.get();
+						childNode.start = i.get();
+						
+						for (i.getAndIncrement() ; i.get() < source.buffer.limit() ; i.getAndIncrement()) {
+							c = (char) source.buffer.get(i.get());
+							if (delimit) {
 								delimit = false;
+							} else if (c == '\'') {
+								break;
+							} else if (c == '\\') {
+								delimit = true;
 							}
 						}
 						delimit = false;
